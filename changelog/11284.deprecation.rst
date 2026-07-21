@@ -1,0 +1,6 @@
+Accessing ``item.funcargs`` with a fixture name that was not directly requested by the item — as a test function argument, via a :ref:`usefixtures <usefixtures>` marker, or as an autouse fixture — is now deprecated.
+
+In pytest 10, ``item.funcargs`` will only contain directly requested fixtures instead of the item's entire fixture closure.
+Use :func:`request.getfixturevalue(name) <pytest.FixtureRequest.getfixturevalue>` to retrieve any other fixture value.
+
+See :ref:`the deprecation docs <item-funcargs-non-initial>` for more information.

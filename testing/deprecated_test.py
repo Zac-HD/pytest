@@ -310,3 +310,87 @@ class TestFixtureNodeidDeprecations:
         )
         result = pytester.runpytest()
         result.assert_outcomes(passed=1)
+
+
+def test_item_funcargs_non_initial_access_is_deprecated(pytester: Pytester) -> None:
+    """Accessing item.funcargs with a fixture name not directly requested by
+    the item warns (#11284)."""
+    pytester.makepyfile(
+        """
+        import warnings
+
+        import pytest
+
+        @pytest.fixture
+        def transitive():
+            return 1
+
+        @pytest.fixture
+        def direct(transitive):
+            return 2
+
+        @pytest.fixture(autouse=True)
+        def auto():
+            return 3
+
+        @pytest.fixture
+        def used():
+            return 4
+
+        @pytest.mark.usefixtures("used")
+        def test(request, direct):
+            funcargs = request.node.funcargs
+            # Directly requested fixtures do not warn.
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                assert funcargs["direct"] == 2
+                assert funcargs["auto"] == 3
+                assert funcargs["used"] == 4
+            # Fixtures which are only part of the closure warn.
+            with pytest.warns(
+                pytest.PytestRemovedIn10Warning,
+                match=r"Accessing item\\.funcargs\\['transitive'\\]",
+            ):
+                assert funcargs["transitive"] == 1
+            # The warning is only issued once per item.
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                assert funcargs["transitive"] == 1
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_doctest_item_funcargs_non_initial_access_is_deprecated(
+    pytester: Pytester,
+) -> None:
+    """The item.funcargs deprecation also applies to doctest items (#11284)."""
+    pytester.makeconftest(
+        """
+        import pytest
+
+        @pytest.fixture
+        def transitive():
+            return 1
+
+        @pytest.fixture(autouse=True)
+        def auto(transitive):
+            return 2
+        """
+    )
+    pytester.makepyfile(
+        '''
+        """
+        >>> getfixture("request").node.funcargs["auto"]
+        2
+        >>> getfixture("request").node.funcargs["transitive"]
+        1
+        """
+        '''
+    )
+    result = pytester.runpytest("--doctest-modules")
+    result.assert_outcomes(passed=1, warnings=1)
+    result.stdout.fnmatch_lines(
+        ["*PytestRemovedIn10Warning: Accessing item.funcargs*'transitive'*"]
+    )

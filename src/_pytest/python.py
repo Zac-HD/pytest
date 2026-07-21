@@ -55,6 +55,7 @@ from _pytest.config import hookimpl
 from _pytest.config import UsageError
 from _pytest.config.argparsing import Parser
 from _pytest.deprecated import check_ispytest
+from _pytest.deprecated import ITEM_FUNCARGS_NON_INITIAL
 from _pytest.fixtures import _resolve_args_directness
 from _pytest.fixtures import FixtureDef
 from _pytest.fixtures import FixtureRequest
@@ -1635,6 +1636,28 @@ def _ascii_escaped_by_config(val: str | bytes, config: Config | None) -> str:
     return val if escape_option else ascii_escaped(val)  # type: ignore
 
 
+class _DeprecatingFuncArgs(dict[str, object]):
+    """Dict for ``item.funcargs`` which warns on access to fixtures that were
+    not directly requested by the item.
+
+    In pytest 10, ``item.funcargs`` will only contain directly requested
+    fixtures (the test function arguments, ``usefixtures`` fixtures and
+    autouse fixtures) instead of the item's entire fixture closure.
+    """
+
+    def __init__(self, initialnames: Iterable[str]) -> None:
+        super().__init__()
+        self._initialnames = frozenset(initialnames)
+        # Warn at most once per item to avoid flooding the output.
+        self._warned = False
+
+    def __getitem__(self, key: str) -> object:
+        if not self._warned and key not in self._initialnames:
+            self._warned = True
+            warnings.warn(ITEM_FUNCARGS_NON_INITIAL.format(name=key), stacklevel=2)
+        return super().__getitem__(key)
+
+
 class Function(PyobjMixin, nodes.Item):
     """Item responsible for setting up and executing a Python test function.
 
@@ -1725,7 +1748,9 @@ class Function(PyobjMixin, nodes.Item):
         return super().from_parent(parent=parent, **kw)
 
     def _initrequest(self) -> None:
-        self.funcargs: dict[str, object] = {}
+        self.funcargs: dict[str, object] = _DeprecatingFuncArgs(
+            self._fixtureinfo.initialnames
+        )
         self._request = fixtures.TopRequest(self, _ispytest=True)
 
     @property

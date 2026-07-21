@@ -81,6 +81,15 @@ CONFIG_INICFG = PytestRemovedIn10Warning(
     "See https://docs.pytest.org/en/stable/deprecations.html#config-inicfg"
 )
 
+ITEM_FUNCARGS_NON_INITIAL = UnformattedWarning(
+    PytestRemovedIn10Warning,
+    "Accessing item.funcargs[{name!r}] is deprecated: the fixture is not directly requested by the item\n"
+    "(as a test function argument, a usefixtures marker or an autouse fixture).\n"
+    "In pytest 10, item.funcargs will only contain directly requested fixtures.\n"
+    "Use request.getfixturevalue({name!r}) to retrieve any other fixture value.\n"
+    "See https://docs.pytest.org/en/stable/deprecations.html#item-funcargs-non-initial",
+)
+
 FIXTURE_GETFIXTUREVALUE_DURING_TEARDOWN = UnformattedWarning(
     PytestRemovedIn10Warning,
     'Calling request.getfixturevalue("{argname}") during teardown is deprecated.\n'

@@ -15,6 +15,39 @@ Below is a complete list of all pytest features which are considered deprecated.
 :class:`~pytest.PytestWarning` or subclasses, which can be filtered using :ref:`standard warning filters <warnings>`.
 
 
+.. _item-funcargs-non-initial:
+
+``item.funcargs`` with non-directly requested fixtures
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. deprecated:: 9.2
+
+Accessing ``item.funcargs`` with a fixture name that was not directly requested
+by the item is deprecated, and will raise :class:`KeyError` starting from pytest 10.
+Directly requested fixtures are the test function arguments, fixtures applied with a
+:ref:`usefixtures <usefixtures>` marker, and autouse fixtures.
+
+Historically ``item.funcargs`` contained the item's entire fixture closure, including
+fixtures that were only pulled in transitively as dependencies of other fixtures.
+A fixture should only be considered "available" to a test (or to plugin code inspecting
+that test) if the test actually requested it itself; relying on transitive dependencies
+breaks as soon as an intermediate fixture stops requesting them.
+
+To retrieve a fixture value that the item did not directly request, use
+:func:`request.getfixturevalue() <pytest.FixtureRequest.getfixturevalue>` instead:
+
+.. code-block:: python
+
+    # Deprecated
+    value = item.funcargs["some_transitive_fixture"]
+
+    # Use instead
+    value = item._request.getfixturevalue("some_transitive_fixture")
+
+To check whether a fixture is part of an item's fixture closure without triggering
+the warning, use ``name in item.fixturenames``.
+
+
 .. _fixture-nodeid-deprecated:
 
 Passing ``baseid``/``nodeid`` strings to fixture registration APIs
