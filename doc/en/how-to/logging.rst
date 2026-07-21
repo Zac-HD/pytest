@@ -221,6 +221,8 @@ means that it will be overwritten at each test session.
 If you'd like the file opened in append mode instead, then you can pass :option:`--log-file-mode=a`.
 Note that relative paths for the log-file location, whether passed on the CLI or declared in a
 config file, are always resolved relative to the current working directory.
+A section header with the test's nodeid is written to the log file at the start
+of each test, so that log records can be attributed to the test which emitted them.
 
 You can also specify the logging level for the log file by passing
 :option:`--log-file-level`. This setting accepts the logging level names or numeric

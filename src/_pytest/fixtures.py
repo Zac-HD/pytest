@@ -1637,6 +1637,19 @@ def _resolve_args_directness(
         arg_directness = dict.fromkeys(argnames, "direct")
         for arg in indirect:
             if arg not in argnames:
+                if isinstance(indirect, str) or not isinstance(arg, str):
+                    # Very likely the result of passing several argument names
+                    # positionally, e.g. parametrize("x", "y", [(1, 2)]), which
+                    # makes the argvalues land in `indirect` (#8593).
+                    fail(
+                        f"In {nodeid}: expected Sequence[str] or bool"
+                        f" for indirect, got {indirect!r}.\n"
+                        "If you tried to parametrize several argument names, pass them"
+                        " as a single comma-separated string or a sequence of strings,"
+                        ' e.g. parametrize("arg1,arg2", [(1, 2)]),'
+                        " rather than as separate arguments.",
+                        pytrace=False,
+                    )
                 fail(
                     f"In {nodeid}: indirect fixture '{arg}' doesn't exist",
                     pytrace=False,

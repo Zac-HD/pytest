@@ -681,6 +681,7 @@ class LoggingPlugin:
             config, "log_file_level", "log_level"
         )
         log_file = get_option_ini(config, "log_file") or os.devnull
+        self._log_file_enabled = log_file != os.devnull
         if log_file != os.devnull:
             directory = os.path.dirname(os.path.abspath(log_file))
             if not os.path.isdir(directory):
@@ -768,6 +769,7 @@ class LoggingPlugin:
         # https://github.com/python/mypy/issues/11193
         stream: io.TextIOWrapper = fpath.open(mode=self.log_file_mode, encoding="UTF-8")  # type: ignore[assignment]
         old_stream = self.log_file_handler.setStream(stream)
+        self._log_file_enabled = True
         if old_stream:
             old_stream.close()
 
@@ -816,9 +818,15 @@ class LoggingPlugin:
                 return (yield)  # Run all the tests.
 
     @hookimpl
-    def pytest_runtest_logstart(self) -> None:
+    def pytest_runtest_logstart(self, nodeid: str) -> None:
         self.log_cli_handler.reset()
         self.log_cli_handler.set_when("start")
+        stream = self.log_file_handler.stream
+        if self._log_file_enabled and stream is not None:
+            # Write a section header to the log file so its records can be
+            # attributed to the test which emitted them (#8859).
+            separator = "-" * 24
+            stream.write(f"{separator} {nodeid} {separator}\n")
 
     @hookimpl
     def pytest_runtest_logreport(self) -> None:

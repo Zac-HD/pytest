@@ -1,0 +1,1 @@
+When :confval:`log_file` is used, a section header with the test's nodeid is now written to the log file at the start of each test, making it possible to tell which test each log record was emitted by.

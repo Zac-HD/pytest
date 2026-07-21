@@ -1,0 +1,1 @@
+:func:`Metafunc.parametrize() <pytest.Metafunc.parametrize>` now shows a helpful error message when several argument-name strings are passed positionally (e.g. ``parametrize("arg1", "arg2", [(1, 2)])``), instead of the confusing "indirect fixture doesn't exist" error.

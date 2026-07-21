@@ -968,6 +968,42 @@ class TestMetafunc:
         with pytest.raises(fail.Exception):
             metafunc.parametrize("x, y", [("a", "b")], indirect=["x", "z"])
 
+    def test_parametrize_multiple_argname_strings_error(self) -> None:
+        """A hint is shown when several argname strings are passed
+        positionally, so that the argvalues end up in `indirect` (#8593)."""
+
+        def func(x, y):
+            pass
+
+        metafunc = self.Metafunc(func)
+        with pytest.raises(
+            fail.Exception,
+            match=r"comma-separated string",
+        ):
+            metafunc.parametrize("x", "y", [(1, 2)])  # type: ignore[arg-type]
+
+    def test_parametrized_collect_with_wrong_argnames_format(
+        self, pytester: Pytester
+    ) -> None:
+        """Same as above, but end-to-end at collection time (#8593)."""
+        py_file = pytester.makepyfile(
+            """
+            import pytest
+
+            @pytest.mark.parametrize("arg1", "arg2", [(1, 1)])
+            def test_func(arg1, arg2):
+                pass
+            """
+        )
+        result = pytester.runpytest(py_file)
+        result.stdout.fnmatch_lines(
+            [
+                "*expected Sequence?str? or bool for indirect, got*1, 1*",
+                "*pass them as a single comma-separated string*",
+            ]
+        )
+        result.assert_outcomes(errors=1)
+
     def test_parametrize_uses_no_fixture_error_indirect_false(
         self, pytester: Pytester
     ) -> None:

@@ -664,6 +664,38 @@ def test_log_file_cli(pytester: Pytester) -> None:
         assert "This log message won't be shown" not in contents
 
 
+def test_log_file_sections_per_test(pytester: Pytester) -> None:
+    """The log file contains a section header per test, so that log records
+    can be attributed to the test which emitted them (#8859)."""
+    pytester.makepyfile(
+        """
+        import logging
+
+        def test_one():
+            logging.getLogger('catchlog').warning("hello from one")
+
+        def test_two():
+            logging.getLogger('catchlog').warning("hello from two")
+    """
+    )
+
+    log_file = str(pytester.path.joinpath("pytest.log"))
+
+    result = pytester.runpytest(f"--log-file={log_file}")
+    assert result.ret == 0
+    with open(log_file, encoding="utf-8") as rfh:
+        contents = rfh.read()
+    expected = [
+        "test_log_file_sections_per_test.py::test_one ",
+        "hello from one",
+        "test_log_file_sections_per_test.py::test_two ",
+        "hello from two",
+    ]
+    positions = [contents.find(entry) for entry in expected]
+    assert -1 not in positions
+    assert positions == sorted(positions)
+
+
 def test_log_file_mode_cli(pytester: Pytester) -> None:
     # Default log file level
     pytester.makepyfile(
@@ -1122,7 +1154,7 @@ def test_log_in_runtest_logreport(pytester: Pytester) -> None:
     pytester.runpytest()
     with open(log_file, encoding="utf-8") as rfh:
         contents = rfh.read()
-        assert contents.count("logreport") == 3
+        assert contents.count("INFO     conftest:conftest.py:5 logreport") == 3
 
 
 def test_log_set_path(pytester: Pytester) -> None:
@@ -1552,7 +1584,11 @@ def test_log_file_cli_fallback_options(pytester: Pytester) -> None:
     assert os.path.isfile(log_file)
     with open(log_file, encoding="utf-8") as rfh:
         contents = rfh.read()
-        assert re.match(r"[0-9]{2}:[0-9]{2} error text going to logger\s*", contents)
+        assert re.search(
+            r"^[0-9]{2}:[0-9]{2} error text going to logger\s*$",
+            contents,
+            flags=re.MULTILINE,
+        )
         assert "info text going to logger" not in contents
         assert "warning text going to logger" not in contents
         assert "error text going to logger" in contents
@@ -1573,8 +1609,10 @@ def test_log_file_cli_fallback_options(pytester: Pytester) -> None:
     assert os.path.isfile(log_file)
     with open(log_file, encoding="utf-8") as rfh:
         contents = rfh.read()
-        assert re.match(
-            r"[0-9]{2}:[0-9]{2}:[0-9]{2} : error text going to logger\s*", contents
+        assert re.search(
+            r"^[0-9]{2}:[0-9]{2}:[0-9]{2} : error text going to logger\s*$",
+            contents,
+            flags=re.MULTILINE,
         )
         assert "info text going to logger" not in contents
         assert "warning text going to logger" not in contents
