@@ -128,7 +128,19 @@ def runtestprotocol(
         # This only happens if the item is re-run, as is done by
         # pytest-rerunfailures.
         item._initrequest()  # type: ignore[attr-defined]
+    loop_mark = item.get_closest_marker("loop")
     try:
+        if loop_mark is not None:
+            from _pytest.loop import loop_runtestprotocol
+
+            # NOTE: a bare positional callable (`pytest.mark.loop(ctrl)`) is
+            # swallowed by MarkDecorator's direct-decoration shorthand, so the
+            # controller is passed by keyword (or via `.with_args(ctrl)`).
+            if "controller" in loop_mark.kwargs:
+                controller = loop_mark.kwargs["controller"]
+            else:
+                controller = loop_mark.args[0]
+            return loop_runtestprotocol(item, controller, log=log, nextitem=nextitem)
         rep = call_and_report(item, "setup", log)
         reports = [rep]
         if rep.passed:
@@ -196,7 +208,12 @@ def pytest_runtest_call(item: Item) -> None:
 
 def pytest_runtest_teardown(item: Item, nextitem: Item | None) -> None:
     _update_current_test_var(item, "teardown")
-    item.session._setupstate.teardown_exact(nextitem)
+    if nextitem is item:
+        # Loop-iteration sentinel: tear down only the item frame, keeping
+        # higher scopes (class/module/session fixtures) set up.
+        item.session._setupstate.teardown_item_frame(item)
+    else:
+        item.session._setupstate.teardown_exact(nextitem)
     _update_current_test_var(item, None)
 
 
@@ -547,6 +564,31 @@ class SetupState:
         assert callable(finalizer)
         assert node in self.stack, (node, self.stack)
         self.stack[node][0].append(finalizer)
+
+    def teardown_item_frame(self, item: Item) -> None:
+        """Tear down only the item's own frame (the top of the stack),
+        running its finalizers LIFO. Higher frames are untouched.
+
+        Used for intermediate loop-iteration teardown (the ``nextitem is
+        item`` sentinel). If the item frame was never pushed (e.g. a
+        higher-collector setup failure), this is a no-op.
+        """
+        if not self.stack or next(reversed(self.stack)) is not item:
+            assert item not in self.stack
+            return
+        node, (finalizers, _) = self.stack.popitem()
+        exceptions: list[BaseException] = []
+        while finalizers:
+            fin = finalizers.pop()
+            try:
+                fin()
+            except TEST_OUTCOME as e:
+                exceptions.append(e)
+        if len(exceptions) == 1:
+            raise exceptions[0]
+        elif exceptions:
+            msg = f"errors while tearing down {node!r}"
+            raise BaseExceptionGroup(msg, exceptions[::-1])
 
     def teardown_exact(self, nextitem: Item | None) -> None:
         """Teardown the current stack up until reaching nodes that nextitem

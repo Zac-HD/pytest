@@ -182,6 +182,11 @@ def pytest_pyfunc_call(pyfuncitem: Function) -> object | None:
         async_fail(pyfuncitem.nodeid)
     funcargs = pyfuncitem.funcargs
     testargs = {arg: funcargs[arg] for arg in pyfuncitem._fixtureinfo.argnames}
+    # Per-iteration values injected by a loop controller (see _pytest.loop);
+    # covers the mark's `provides=` names and shadows fixture values.
+    loop_overlay = getattr(pyfuncitem, "_loop_funcargs_overlay", None)
+    if loop_overlay:
+        testargs.update(loop_overlay)
     result = testfunction(**testargs)
     if hasattr(result, "__await__") or hasattr(result, "__aiter__"):
         async_fail(pyfuncitem.nodeid)

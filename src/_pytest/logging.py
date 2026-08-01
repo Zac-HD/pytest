@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from collections.abc import Mapping
 from collections.abc import Set as AbstractSet
+import contextlib
 from contextlib import contextmanager
 from contextlib import nullcontext
 from datetime import datetime
@@ -839,7 +840,11 @@ class LoggingPlugin:
         ):
             caplog_handler.reset()
             report_handler.reset()
-            item.stash[caplog_records_key][when] = caplog_handler.records
+            # setdefault: the final teardown of a looped item (see
+            # _pytest.loop) runs without a paired setup phase.
+            item.stash.setdefault(caplog_records_key, {})[when] = (
+                caplog_handler.records
+            )
             item.stash[caplog_handler_key] = caplog_handler
 
             try:
@@ -872,8 +877,10 @@ class LoggingPlugin:
             with self._runtest_for(item, "teardown"):
                 yield
         finally:
-            del item.stash[caplog_records_key]
-            del item.stash[caplog_handler_key]
+            with contextlib.suppress(KeyError):
+                del item.stash[caplog_records_key]
+            with contextlib.suppress(KeyError):
+                del item.stash[caplog_handler_key]
 
     @hookimpl
     def pytest_runtest_logfinish(self) -> None:

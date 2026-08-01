@@ -174,6 +174,10 @@ class BaseReport:
             This function is considered **experimental**, so beware that it is subject to changes
             even in patch releases.
         """
+        # Note for the loop protocol (see _pytest.loop): loop-iteration
+        # reports are kept out of the "failed"/"passed" totals by their
+        # distinct teststatus categories, not by this flag -- returning
+        # False here would also hide them from the "N loop failed" count.
         return True
 
     @property

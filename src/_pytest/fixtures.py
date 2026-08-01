@@ -1759,6 +1759,13 @@ class FixtureManager:
             argnames = getfuncargnames(func, name=node.name, cls=cls)
         else:
             argnames = ()
+        loop_mark = node.get_closest_marker("loop")
+        if loop_mark is not None:
+            # Names provided per-iteration by the loop controller are not
+            # fixtures; exclude them from fixture resolution entirely.
+            provides = frozenset(loop_mark.kwargs.get("provides", ()))
+            if provides:
+                argnames = tuple(a for a in argnames if a not in provides)
         usefixturesnames = self._getusefixturesnames(node)
         autousenames = self._getautousenames(node)
         initialnames = deduplicate_names(autousenames, usefixturesnames, argnames)

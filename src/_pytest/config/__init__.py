@@ -338,6 +338,7 @@ default_plugins = (
     "reports",
     "faulthandler",
     "subtests",
+    "loop",
 )
 
 builtin_plugins = {
