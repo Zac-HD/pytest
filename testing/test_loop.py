@@ -334,3 +334,168 @@ class TestHypothesisIntegration:
         result = pytester.runpytest("-v")
         result.assert_outcomes(passed=1)
         result.stdout.no_fnmatch_line("*ITERFAIL*")
+
+
+class TestFullGivenIntegration:
+    """Real @given machinery (run_engine: database, @example, shrinking)
+    driven through the loop protocol via -p _pytest.loop_hypothesis."""
+
+    PLUGIN_ARGS = ("-p", "_pytest.loop_hypothesis", "-p", "no:hypothesispytest")
+
+    def test_given_shrinks_with_fresh_fixtures(self, pytester: Pytester) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            import pytest
+            from hypothesis import given, settings, strategies as st
+
+            setups = []
+
+            @pytest.fixture
+            def fresh_list():
+                setups.append(1)
+                lst = []
+                yield lst
+                assert len(lst) <= 1  # stale fixture would accumulate
+
+            @given(x=st.integers())
+            @settings(deadline=None, max_examples=30, derandomize=True)
+            def test_shrinks(x, fresh_list):
+                fresh_list.append(x)
+                assert x < 100
+
+            def test_fixture_fresh_per_example():
+                assert len(setups) > 10
+            """
+        )
+        result = pytester.runpytest(*self.PLUGIN_ARGS)
+        result.assert_outcomes(passed=1, failed=1)
+        result.stdout.fnmatch_lines(
+            [
+                "*Failing test case: test_shrinks(*",
+                "*x=100,*",
+                "*LOOP ITERATION FAILURES*",
+                "*minimal*",
+                "*assert 100 < 100*",
+            ]
+        )
+
+    def test_explicit_example_respected(self, pytester: Pytester) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            from hypothesis import example, given, settings, strategies as st
+
+            @given(x=st.integers(min_value=0, max_value=10))
+            @settings(deadline=None, max_examples=5, derandomize=True)
+            @example(x=12345)
+            def test_example(x):
+                assert x != 12345
+            """
+        )
+        result = pytester.runpytest(*self.PLUGIN_ARGS)
+        result.assert_outcomes(failed=1)
+        result.stdout.fnmatch_lines(
+            ["*Failing explicit example: test_example(*", "*x=12345,*"]
+        )
+
+    def test_database_replay_across_runs(self, pytester: Pytester) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            from hypothesis import given, settings, strategies as st
+
+            @given(x=st.integers())
+            @settings(deadline=None, max_examples=200)
+            def test_db(x):
+                assert x < 100
+            """
+        )
+        first = pytester.runpytest(*self.PLUGIN_ARGS)
+        first.assert_outcomes(failed=1)
+        # The failure is now in .hypothesis/examples; a fresh process
+        # replays it in a handful of iterations instead of rediscovering.
+        second = pytester.runpytest_inprocess(*self.PLUGIN_ARGS)
+        second.assert_outcomes(failed=1)
+        parents = [
+            rep
+            for rep in second.reprec.getreports("pytest_runtest_logreport")  # type: ignore[attr-defined]
+            if rep.when == "call" and getattr(rep, "loop_summary", None) is not None
+        ]
+        assert len(parents) == 1
+        assert parents[0].loop_summary["iterations_run"] < 20
+
+    def test_passing_given_is_silent_and_fixtures_work(
+        self, pytester: Pytester
+    ) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            from hypothesis import given, settings, strategies as st
+
+            @given(x=st.integers(), y=st.integers())
+            @settings(deadline=None, max_examples=20, derandomize=True)
+            def test_ok(x, y, tmp_path):
+                assert tmp_path.is_dir()
+            """
+        )
+        result = pytester.runpytest("-v", *self.PLUGIN_ARGS)
+        result.assert_outcomes(passed=1)
+        result.stdout.no_fnmatch_line("*ITERFAIL*")
+
+    def test_interactive_data_strategy(self, pytester: Pytester) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            from hypothesis import given, settings, strategies as st
+
+            @given(data=st.data())
+            @settings(deadline=None, max_examples=20, derandomize=True)
+            def test_data(data, tmp_path):
+                x = data.draw(st.integers(0, 10))
+                assert 0 <= x <= 10
+            """
+        )
+        result = pytester.runpytest(*self.PLUGIN_ARGS)
+        result.assert_outcomes(passed=1)
+
+    def test_skip_inside_example_skips_item(self, pytester: Pytester) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            import pytest
+            from hypothesis import given, settings, strategies as st
+
+            @given(x=st.integers())
+            @settings(deadline=None, max_examples=10)
+            def test_skipped(x):
+                pytest.skip("not on this platform")
+            """
+        )
+        result = pytester.runpytest(*self.PLUGIN_ARGS)
+        result.assert_outcomes(skipped=1)
+
+    def test_pdb_fires_once_on_minimal_example(self, pytester: Pytester) -> None:
+        pytest.importorskip("hypothesis")
+        pytester.makepyfile(
+            """
+            from hypothesis import given, settings, strategies as st
+
+            @given(x=st.integers())
+            @settings(deadline=None, max_examples=30, derandomize=True)
+            def test_fails(x, tmp_path):
+                assert x < 100
+            """
+        )
+        child = pytester.spawn_pytest(
+            "--pdb -p _pytest.loop_hypothesis -p no:hypothesispytest test_pdb_fires_once_on_minimal_example.py"
+        )
+        child.expect("entering PDB")
+        child.expect("Pdb")
+        child.sendline("x")
+        child.expect("100")
+        child.sendline("c")
+        rest = child.read().decode("utf8")
+        # the parent verdict must not re-enter pdb for the same exception
+        assert "entering PDB" not in rest
+        child.wait()

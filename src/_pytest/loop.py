@@ -133,6 +133,10 @@ class LoopContext:
         self._emitted_keys: set[object] = set()
         self._any_failed = False
         self._any_emitted = False
+        # id()s of exceptions from failed live iterations, so the parent
+        # verdict does not re-fire pytest_exception_interact for an
+        # exception the user already interacted with.
+        self._live_failure_exc_ids: set[int] = set()
 
     def run_iteration(
         self,
@@ -172,18 +176,23 @@ class LoopContext:
         self.iteration_count += 1
         reports: list[TestReport] = []
         try:
-            rep_setup = call_and_report(item, "setup", live)
+            # Non-live iterations also suppress pytest_exception_interact:
+            # --pdb must fire on the (live) shrunk replay, not on every
+            # silently-discarded failure the engine explores.
+            rep_setup = call_and_report(item, "setup", live, interact=live)
             reports.append(rep_setup)
             if rep_setup.passed:
                 if funcargs:
                     item._loop_funcargs_overlay = dict(funcargs)  # type: ignore[attr-defined]
                 try:
-                    reports.append(call_and_report(item, "call", live))
+                    reports.append(call_and_report(item, "call", live, interact=live))
                 finally:
                     item._loop_funcargs_overlay = None  # type: ignore[attr-defined]
             # Intermediate teardown: the ``nextitem is item`` sentinel pops
             # only the item frame, leaving higher scopes set up.
-            reports.append(call_and_report(item, "teardown", live, nextitem=item))
+            reports.append(
+                call_and_report(item, "teardown", live, interact=live, nextitem=item)
+            )
         finally:
             item.stash[active_iteration_key] = None
 
@@ -204,6 +213,8 @@ class LoopContext:
         )
         if when_failed is not None:
             self._any_failed = True
+            if live and excinfo is not None:
+                self._live_failure_exc_ids.add(id(excinfo.value))
         if live:
             self._record_emitted(key)
         return result
@@ -276,7 +287,10 @@ def loop_runtestprotocol(
     reports = [parent_report]
     if log:
         ihook.pytest_runtest_logreport(report=parent_report)
-    if check_interactive_exception(call, parent_report):
+    if (
+        check_interactive_exception(call, parent_report)
+        and id(call.excinfo and call.excinfo.value) not in ctx._live_failure_exc_ids
+    ):
         ihook.pytest_exception_interact(node=item, call=call, report=parent_report)
 
     if item.session.shouldfail or item.session.shouldstop:

@@ -177,7 +177,10 @@ def async_fail(nodeid: str) -> None:
 
 @hookimpl(trylast=True)
 def pytest_pyfunc_call(pyfuncitem: Function) -> object | None:
-    testfunction = pyfuncitem.obj
+    # A loop controller (see _pytest.loop) may redirect the call to a
+    # different function -- e.g. hypothesis calling the undecorated inner
+    # test instead of its @given wrapper.
+    testfunction = getattr(pyfuncitem, "_loop_call_target", None) or pyfuncitem.obj
     if is_async_function(testfunction):
         async_fail(pyfuncitem.nodeid)
     funcargs = pyfuncitem.funcargs

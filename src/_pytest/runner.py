@@ -251,7 +251,11 @@ def pytest_report_teststatus(report: BaseReport) -> tuple[str, str, str] | None:
 
 
 def call_and_report(
-    item: Item, when: Literal["setup", "call", "teardown"], log: bool = True, **kwds
+    item: Item,
+    when: Literal["setup", "call", "teardown"],
+    log: bool = True,
+    interact: bool = True,
+    **kwds,
 ) -> TestReport:
     ihook = item.ihook
     if when == "setup":
@@ -271,7 +275,7 @@ def call_and_report(
     report: TestReport = ihook.pytest_runtest_makereport(item=item, call=call)
     if log:
         ihook.pytest_runtest_logreport(report=report)
-    if check_interactive_exception(call, report):
+    if interact and check_interactive_exception(call, report):
         ihook.pytest_exception_interact(node=item, call=call, report=report)
     return report
 
